@@ -1,0 +1,1101 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<title>Speech Table System</title>
+<style>
+/* =========================================================
+   PRACTICE HEATMAP — CSS SECTION
+   ========================================================= */
+
+/* The cell MUST be position:relative so the badge can anchor
+   to its upper-right corner without causing layout shifts. */
+.practice-cell {
+    position: relative;
+}
+
+/* Smooth color transition when the heatmap color changes.
+   Kept short to remain performant on large tables. */
+.practice-cell {
+    transition: background-color 0.25s ease-out;
+}
+
+/* -----------------------------------------
+   Practice level classes (threshold based)
+   ----------------------------------------- */
+.practice-low {
+    /* 1–9 listens */
+}
+
+.practice-medium {
+    /* 10–49 listens */
+}
+
+.practice-high {
+    /* 50–99 listens */
+}
+
+.practice-mastered {
+    /* 100+ listens */
+    font-weight: 600;
+}
+
+/* -----------------------------------------
+   Badge in the upper-right corner of a cell
+   ----------------------------------------- */
+.practice-badge {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+
+    /* No layout shift: absolutely positioned, no flow impact */
+    pointer-events: none;
+    user-select: none;
+
+    font-size: 10px;
+    line-height: 1;
+    padding: 1px 4px;
+    border-radius: 8px;
+
+    background: rgba(0, 0, 0, 0.55);
+    color: #fff;
+    white-space: nowrap;
+
+    /* Hidden by default; shown only when count > 0 */
+    display: none;
+    z-index: 2;
+}
+
+/* Visible state toggled by JS via class to avoid inline style churn */
+.practice-badge.is-visible {
+    display: inline-block;
+}
+
+
+
+
+  
+/* ========== AI MODULE STYLES ========== */
+
+/* Activate Button (shows on load) */
+.ai-activate {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  padding: 15px 30px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  border-radius: 25px;
+  font-weight: bold;
+  font-size: 16px;
+  cursor: pointer;
+  box-shadow: 0 4px 20px rgba(102, 126, 234, 0.5);
+  z-index: 999;
+  transition: all 0.3s;
+}
+.ai-activate:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 30px rgba(102, 126, 234, 0.6);
+}
+.ai-activate.loading {
+  background: #ffc107;
+  cursor: wait;
+}
+.ai-activate.loaded {
+  background: #28a745;
+}
+
+/* Toggle Button (hidden until AI loads) */
+.ai-toggle {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  padding: 12px 20px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  border-radius: 25px;
+  font-weight: bold;
+  cursor: pointer;
+  box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+  z-index: 999;
+  display: none;
+  transition: transform 0.2s;
+}
+.ai-toggle.active { display: block; }
+.ai-toggle:hover { transform: scale(1.05); }
+
+/* AI Panel (sidebar) */
+.ai-panel {
+  position: fixed;
+  top: 0;
+  right: -400px;
+  width: 380px;
+  height: 100vh;
+  background: white;
+  box-shadow: -5px 0 25px rgba(0,0,0,0.2);
+  z-index: 1000;
+  transition: right 0.3s ease;
+  overflow-y: auto;
+}
+.ai-panel.active { right: 0; }
+
+.ai-panel-header {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+.ai-panel-header h3 { margin: 0; }
+.ai-close {
+  background: transparent;
+  border: none;
+  color: white;
+  font-size: 24px;
+  cursor: pointer;
+  padding: 0;
+  width: 30px;
+  height: 30px;
+}
+
+.ai-panel-body {
+  padding: 20px;
+}
+
+/* Command Box */
+.ai-command-box {
+  margin-bottom: 20px;
+}
+.ai-command-box label {
+  display: block;
+  margin-bottom: 10px;
+  font-weight: bold;
+  color: #667eea;
+  font-size: 15px;
+}
+.ai-command-box textarea {
+  width: 100%;
+  padding: 12px;
+  border: 2px solid #e0e0e0;
+  border-radius: 8px;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  font-size: 14px;
+  resize: vertical;
+  transition: border-color 0.3s;
+  box-sizing: border-box;
+}
+.ai-command-box textarea:focus {
+  outline: none;
+  border-color: #667eea;
+}
+.ai-command-box button {
+  width: 100%;
+  padding: 12px;
+  margin-top: 10px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: transform 0.2s;
+  font-size: 14px;
+}
+.ai-command-box button:hover:not(:disabled) {
+  transform: translateY(-2px);
+}
+.ai-command-box button:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+  transform: none;
+}
+.ai-command-status {
+  margin-top: 10px;
+  padding: 10px;
+  background: #f0f4ff;
+  border-left: 4px solid #667eea;
+  border-radius: 5px;
+  font-size: 13px;
+  color: #555;
+  display: none;
+}
+.ai-command-status.active {
+  display: block;
+}
+
+/* Progress Display */
+.ai-progress {
+  margin: 20px 0;
+  padding: 15px;
+  background: #f0f4ff;
+  border-radius: 8px;
+  display: none;
+}
+.ai-progress.active { display: block; }
+
+.progress-bar {
+  width: 100%;
+  height: 8px;
+  background: #e0e0e0;
+  border-radius: 10px;
+  overflow: hidden;
+  margin-bottom: 10px;
+}
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #667eea, #764ba2);
+  width: 0%;
+  transition: width 0.3s;
+}
+
+#aiProgressText {
+  font-size: 13px;
+  color: #667eea;
+  font-weight: bold;
+  margin-bottom: 5px;
+}
+#aiCurrentCell {
+  font-size: 12px;
+  color: #888;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Status Box */
+.ai-status {
+  padding: 12px;
+  background: #fff3cd;
+  border-left: 4px solid #ffc107;
+  border-radius: 5px;
+  font-size: 13px;
+  margin-bottom: 15px;
+}
+
+/* Stop Button */
+.ai-stop {
+  width: 100%;
+  padding: 12px;
+  background: #dc3545;
+  color: white;
+  border: none;
+  border-radius: 5px;
+  font-weight: bold;
+  cursor: pointer;
+  font-size: 14px;
+}
+.ai-stop:hover { background: #c82333; }
+
+/* Cell Animations */
+.cell-processing {
+  background: #fff3cd !important;
+  animation: pulse 1s infinite;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+.cell-completed {
+  background: #d4edda !important;
+  animation: flash 0.5s;
+}
+@keyframes flash {
+  0% { background: #28a745; }
+  100% { background: #d4edda; }
+}
+
+
+
+
+    
+*{box-sizing:border-box;}
+body{margin:0;font-family:sans-serif;background:#f1f3f4;color:#202124;overflow:auto;}
+header{height:56px;background:#fff;border-bottom:1px solid #dadce0;display:flex;align-items:center;gap:10px;padding:0 14px;position:sticky;top:0;z-index:1000;}
+button{border:none;background:#1a73e8;color:white;padding:8px 14px;border-radius:4px;font-size:13px;font-weight:500;cursor:pointer;transition:0.15s;}
+button:hover{background:#1765cc;}
+#toolbar{display:none;background:#fff;border-bottom:1px solid #dadce0;padding:10px 14px;gap:16px;flex-wrap:wrap;align-items:center;}
+#uploadBox{display:none;background:#fff;border-bottom:1px solid #dadce0;padding:14px;}
+label{font-size:13px;color:#5f6368;display:flex;align-items:center;gap:6px;}
+input,textarea,select{border:1px solid #dadce0;border-radius:4px;padding:6px 8px;font-size:13px;outline:none;}
+input:focus,textarea:focus,select:focus{border-color:#1a73e8;}
+textarea{width:320px;height:90px;resize:vertical;display:block;margin-bottom:10px;}
+#sheetWrap{overflow:auto;height:calc(100vh - 56px);background:#fff;}
+table{border-collapse:collapse;table-layout:fixed;background:white;}
+th{border:1px solid #e0e0e0;background:#f8f9fa;color:#5f6368;font-weight:500;text-align:center;height:32px;min-width:100px;width:100px;font-size:12px;position:sticky;top:0;z-index:20;}
+.row-head{min-width:50px;width:50px;left:0;z-index:30;position:sticky;background:#f8f9fa;}
+td{border:1px solid #e0e0e0;width:100px;height:32px;padding:4px 8px;font-size:13px;text-align:left;vertical-align:middle;background:white;position:relative;}
+td:hover{background:#f8fbff;}
+td:focus{outline:none;border:2px solid #1a73e8;z-index:50;}
+.col-select{width:90%;border:none;background:transparent;font-size:11px;color:#5f6368;}
+
+
+/* 1. The Floating Paperclip Button */
+#floatingClip {
+position: absolute;
+display: none; /* Hidden until a cell is clicked */
+background: #1a73e8;
+color: white;
+border: none;
+border-radius: 4px;
+padding: 2px 6px;
+font-size: 12px;
+cursor: pointer;
+z-index: 1000;
+box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+transition: transform 0.1s;
+}
+
+#floatingClip:hover {
+background: #1765cc;
+transform: scale(1.1);
+}
+
+/* 2. The Card Popup Effect (For Images/Video) */
+#mediaPopup {
+position: fixed;
+top: 50%;
+left: 50%;
+transform: translate(-50%, -40%) scale(0.8);
+opacity: 0;
+z-index: 9999;
+background: #141414;
+padding: 12px;
+border-radius: 12px;
+box-shadow: 0 15px 40px rgba(0,0,0,0.6);
+pointer-events: none;
+transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+#mediaPopup.show {
+transform: translate(-50%, -50%) scale(1);
+opacity: 1;
+}
+
+#mediaPopup img, #mediaPopup video {
+max-width: 80vw;
+max-height: 70vh;
+border-radius: 8px;
+display: block;
+}
+
+
+
+/* 1. Bulletproof Yellow Highlight for Light Columns */
+td.reading, 
+tr.reading td {
+background-color: #34ce57 !important; 
+color: #141414 !important; /* Keeps text dark and readable */
+}
+
+/* 2. Bulletproof Dark-Mode Highlight for Dark Columns */
+td:nth-child(even).reading, 
+tr.reading td:nth-child(even) {
+background-color: #1a5ec2 !important; /* The deep blue from your Frequency Finder */
+color: #ffffff !important; 
+}
+
+::-webkit-scrollbar{width:10px;height:10px;}
+::-webkit-scrollbar-track{background:#f1f1f1;}
+::-webkit-scrollbar-thumb{background:#c1c1c1;border-radius:20px;}
+::-webkit-scrollbar-thumb:hover{background:#a8a8a8;}
+
+
+/* 1. Make every other column match the Frequency Finder 'extract box' */
+td:nth-child(even) {
+background-color: #141414; /* The textarea background color */
+color: #e0e0e0;            /* Soft white text */
+}
+
+/* Make the header of the dark columns match the Frequency Finder table headers */
+th:nth-child(even) {
+background-color: #1e1e1e; /* Slightly lighter dark gray for headers */
+color: #ffffff;            /* The nice blue you used for headers, or change to #e0e0e0 */
+}
+
+/* 2. Match the exact hover state used in your Frequency Finder table */
+td:nth-child(even):hover {
+background-color: #1a2233; /* The dark blue hover tint */
+color: #e0e0e0;
+}
+
+/* 3. Ensure the .col-select dropdowns in the dark columns are readable */
+th:nth-child(even) .col-select,
+td:nth-child(even) .col-select {
+color: #e0e0e0;
+}
+
+/* Fix option backgrounds in dropdowns so they aren't transparent over dark columns */
+th:nth-child(even) .col-select option,
+td:nth-child(even) .col-select option {
+background-color: #141414;
+color: #e0e0e0;
+}
+
+</style>
+</head>
+<body>
+
+
+<header>
+<button onclick="saveTable()">Save Table Data</button>
+<button onclick="uploadTable()">Upload Table</button>
+
+<button onclick="toggleUpload()">Upload Column</button>
+
+<button onclick="toggleExtract()">Extract Column</button>
+<button onclick="toggleReader()">Reader Options</button>
+
+<!-- Hidden file input -->
+<input type="file" id="cellFileInput" accept="image/jpeg, audio/mp3, audio/mpeg, video/webm" style="display:none">
+
+
+<!-- The invisible popup container -->
+<div id="mediaPopup"></div>
+
+
+
+
+
+<button onclick="startReading()">Start Reading</button>
+<button onclick="stopReading()">Stop</button>
+<button id="openFinder">Frequency Finder</button>
+<button id="openTabler" class="nav-btn">⊞ Tabler</button>
+
+  
+  <!-- AI ACTIVATE BUTTON -->
+<button id="aiActivate" class="ai-activate">🚀 Turn On AI</button>
+<!-- AI TOGGLE BUTTON (hidden until loaded) -->
+<button id="aiToggle" class="ai-toggle">🤖 AI Assistant</button>
+<!-- AI PANEL -->
+<div id="aiPanel" class="ai-panel">
+  <div class="ai-panel-header">
+    <h3>🤖 AI Assistant</h3>
+    <button id="aiClose" class="ai-close">✕</button>
+  </div>
+  
+  <div class="ai-panel-body">
+    <!-- Command Input -->
+    <div class="ai-command-box">
+      <label>💬 Tell me what to do:</label>
+      <textarea 
+        id="aiCommand" 
+        placeholder="Examples:
+• Translate column A to Spanish in column B
+• Summarize column C into column D
+• Fix grammar in column A, put in B
+• Detect sentiment in column E
+
+Press Ctrl+Enter to run"
+        rows="5"
+      ></textarea>
+      <button id="aiExecute" disabled>▶ Execute Command</button>
+      <div id="aiCommandStatus" class="ai-command-status"></div>
+    </div>
+
+    <!-- Progress Bar -->
+    <div id="aiProgress" class="ai-progress">
+      <div class="progress-bar">
+        <div id="aiProgressFill" class="progress-fill"></div>
+      </div>
+      <div id="aiProgressText">Ready</div>
+      <div id="aiCurrentCell"></div>
+    </div>
+
+    <!-- Status Display -->
+    <div id="aiStatus" class="ai-status">Click "Turn On AI" button to load models</div>
+    
+    <!-- Stop Button -->
+    <button id="aiStop" class="ai-stop" style="display:none">⏹ Stop Processing</button>
+  </div>
+</div>
+
+
+<div style="display:flex; gap:10px; align-items:center; margin:10px 0;">
+<button id="recordBtn" style="background:#28a745; padding:10px 16px; border:none; color:white; border-radius:8px; cursor:pointer; font-weight:bold;">Start Recording</button>
+<button id="stopRecordBtn" style="background:#28a745; padding:10px 16px; border:none; color:white; border-radius:8px; cursor:pointer; font-weight:bold; display:none;">Stop Recording</button>
+<div id="recordingTimer" style="display:none; padding:8px 14px; background:#222; color:#28a745; border-radius:8px; font-weight:bold; font-size:16px; font-family:monospace;">
+00:00
+</div>
+</div>
+
+<div id="recordingStatus" style="display:none; padding:10px; background:#f39c12; border-radius:8px; color:white; margin:10px 0; font-weight:bold;">
+Recording in progress...
+</div>
+
+
+</header>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div id="uploadBox">
+<h3>Upload Data</h3>
+
+<textarea 
+id="columnData" 
+placeholder="Paste your data here (one item per line)"
+style="width:100%; height:160px; font-family:monospace;"
+></textarea>
+
+<br><br>
+
+<label><strong>Start Cell</strong> (e.g. A1, B5, C12)</label><br>
+<input
+id="startCellUpload"
+type="text"
+placeholder="A1"
+style="padding:8px; font-size:15px; width:130px;"
+>
+
+<br><br>
+
+<label><strong>Direction</strong></label><br>
+<select id="uploadDirection" style="padding:8px; font-size:15px;">
+<option value="down">Down (vertical)</option>
+<option value="across">Across (horizontal)</option>
+</select>
+
+<br><br>
+
+<button onclick="uploadColumn()" style="padding:12px 28px; font-size:16px;">
+Upload
+</button>
+</div>
+
+
+
+
+<!-- ===============================
+    EXTRACT POPUP BOX
+================================ -->
+<div id="extractBox" style="display:none; margin-top:10px; border:1px solid #ccc; padding:10px; border-radius:8px; background:#111; color:#fff;">
+
+<h3>Extract Range</h3>
+
+<label>Start Cell:</label>
+<input type="text" id="extractStart" placeholder="A1">
+
+<label>End Cell:</label>
+<input type="text" id="extractEnd" placeholder="C5">
+
+<div style="margin-top:10px;">
+<button onclick="extractRange('copy')">📋 Copy</button>
+<button onclick="extractRange('remove')">🗑 Remove</button>
+</div>
+
+</div>
+
+
+<!-- ===============================
+    EXTRACT POPUP BOX
+================================ -->
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div id="toolbar">
+<label>Speed <input id="speed" type="range" min="0.5" max="2" step="0.1" value="0.85"></label>
+<label>Repeat Row <input id="repeatRow" type="number" min="1" value="1"></label>
+<label>Repeat Table Loop <input id="repeatTable" type="number" min="1" value="1"></label>
+<label>Repeat Cell <input id="repeatCell" type="number" min="1" value="1"></label>
+<label>Start Cell <input id="startCell" type="text" placeholder="A1"></label>
+<label>End Cell <input id="endCell" type="text" placeholder="Z26"></label>
+<label>Reverse Order <input id="reverse" type="checkbox"></label>
+</div>
+
+<div id="sheetWrap">
+  <table id="sheet"></table>
+</div>
+
+<script>
+// ===============================
+// 1. CONFIGURATION
+// ===============================
+const TOTAL_COLS = 26;
+let totalRows = 26;
+const sheetTable = document.getElementById("sheet");
+
+const staticCells = Array(TOTAL_COLS)
+  .fill('<td contenteditable="true"></td>')
+  .join("");
+
+// ===============================
+// 2. BUILD TABLE
+// ===============================
+// Header row (column letters)
+let headerHtml = "<tr><th></th>";
+for (let c = 0; c < TOTAL_COLS; c++) {
+  headerHtml += `<th>${String.fromCharCode(65 + c)}</th>`;
+}
+headerHtml += "</tr>";
+
+// Language selector row
+let selRow = "<tr><th></th>";
+for (let c = 0; c < TOTAL_COLS; c++) {
+  selRow += `<th><select class='col-select'>` +
+            `<option>Off</option>` +
+            `<option>EN</option>` +
+            `<option>IT</option>` +
+            `<option>ES</option>` +
+            `<option>FR</option>` +
+            `<option>DE</option>` +
+            `</select></th>`;
+}
+selRow += "</tr>";
+
+// Data rows (26 × 26)
+let bodyHtml = "";
+for (let r = 1; r <= totalRows; r++) {
+  bodyHtml += `<tr><th class="row-head">${r}</th>${staticCells}</tr>`;
+}
+
+sheetTable.innerHTML = headerHtml + selRow + bodyHtml;
+
+
+// ===============================
+// 3. SMART ROW EXPANSION
+// ===============================
+function addNewRows(count) {
+  if (count <= 0) return;
+  let htmlBuffer = "";
+  for (let i = 0; i < count; i++) {
+    totalRows++;
+    htmlBuffer += `<tr><th class="row-head">${totalRows}</th>${staticCells}</tr>`;
+  }
+  sheetTable.insertAdjacentHTML('beforeend', htmlBuffer);
+}
+
+
+// ===============================
+// 4. CARET HELPER (single definition)
+// ===============================
+function placeCaretAtEnd(el) {
+  el.focus();
+  const range = document.createRange();
+  range.selectNodeContents(el);
+  range.collapse(false);
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+}
+
+
+// ===============================
+// 5. TAB NAVIGATION
+// ===============================
+sheetTable.addEventListener('keydown', (e) => {
+  const target = e.target;
+  if (target.tagName.toLowerCase() !== 'td') return;
+
+  if (e.key === 'Tab') {
+    e.preventDefault();
+
+    const tdIndex = Array.from(target.parentElement.children)
+      .indexOf(target);
+    const rowIndex = Array.from(sheetTable.querySelectorAll('tr'))
+      .indexOf(target.parentElement);
+
+    let nextTd;
+
+    if (tdIndex === TOTAL_COLS) {
+      if (rowIndex === sheetTable.rows.length - 1) {
+        addNewRows(1);
+        const newRow = sheetTable.rows[sheetTable.rows.length - 1];
+        nextTd = newRow.cells[1];
+      } else {
+        const nextRow = sheetTable.rows[rowIndex + 1];
+        nextTd = nextRow.cells[1];
+      }
+    } else {
+      nextTd = target.nextElementSibling;
+    }
+
+    if (nextTd && nextTd.tagName.toLowerCase() === 'td') {
+      nextTd.focus();
+      placeCaretAtEnd(nextTd);
+    }
+  }
+});
+
+
+// ===============================
+// 6. COLUMN UPLOAD (unified)
+// ===============================
+window.uploadColumn = function () {
+  const rawText = document.getElementById("columnData")?.value?.trim();
+  if (!rawText) {
+    alert("Please paste some text.");
+    return;
+  }
+
+  // Parse start cell (e.g. "A1", "B5", "C12")
+  const startCellInput = document.getElementById("startCellUpload")
+    ?.value?.trim().toUpperCase() || "A1";
+  const match = startCellInput.match(/^([A-Z]+)(\d+)$/);
+  if (!match) {
+    alert("Invalid cell format. Use A1, B5, C12, etc.");
+    return;
+  }
+
+  let startCol = match[1].charCodeAt(0) - 65;
+  let startRow = parseInt(match[2]) - 1;
+
+  const direction = document.getElementById("uploadDirection")?.value || "down";
+
+  const lines = rawText.split(/\r?\n/).filter(x => x.trim() !== "");
+  if (!lines.length) return;
+
+  // Auto-expand if needed
+  const neededRows = direction === "down"
+    ? startRow + lines.length
+    : startRow + 1;
+  const currentDataRows = sheetTable.rows.length - 2;
+
+  if (neededRows > currentDataRows) {
+    addNewRows(neededRows - currentDataRows);
+  }
+
+  // Fill cells
+  for (let i = 0; i < lines.length; i++) {
+    let r = startRow;
+    let c = startCol;
+
+    if (direction === "down") {
+      r += i;
+    } else {
+      c += i;
+    }
+
+    const row = sheetTable.rows[r + 2]; // +2 for header + selector
+    if (!row) continue;
+    const cell = row.cells[c + 1];      // +1 for row-number
+    if (cell) cell.innerText = lines[i];
+  }
+
+  alert(`✅ Uploaded ${lines.length} item${lines.length > 1 ? 's' : ''}!`);
+};
+
+
+// ===============================
+// 7. TOGGLE FUNCTIONS (single definitions)
+// ===============================
+window.toggleUpload = function () {
+  const box = document.getElementById("uploadBox");
+  if (!box) return;
+  box.style.display = (box.style.display === "block") ? "none" : "block";
+};
+
+window.toggleExtract = function () {
+  const box = document.getElementById("extractBox");
+  if (!box) return;
+  const uploadBox = document.getElementById("uploadBox");
+  if (uploadBox) uploadBox.style.display = "none";
+  box.style.display = (box.style.display === "block") ? "none" : "block";
+};
+
+window.toggleReader = function () {
+  const bar = document.getElementById("toolbar");
+  if (!bar) return;
+  bar.style.display = (bar.style.display === "flex") ? "none" : "flex";
+};
+</script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+<script src="translator.js"></script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+<script>
+class SpreadsheetAI {
+
+  constructor(tableElement) {
+
+    this.table = tableElement;
+
+    this.isRunning = false;
+    this.stopRequested = false;
+    this.isLoaded = false;
+
+    this.statusEl = document.getElementById('aiStatus');
+    this.progressEl = document.getElementById('aiProgress');
+    this.progressFill = document.getElementById('aiProgressFill');
+    this.progressText = document.getElementById('aiProgressText');
+    this.commandStatus = document.getElementById('aiCommandStatus');
+
+    this.executeBtn = document.getElementById('aiExecute');
+    this.commandInput = document.getElementById('aiCommand');
+
+    this.activateBtn = document.getElementById('aiActivate');
+    this.toggleBtn = document.getElementById('aiToggle');
+    this.closeBtn = document.getElementById('aiClose');
+    this.panel = document.getElementById('aiPanel');
+
+    this.languageMap = {
+      english:'en',
+      spanish:'es',
+      french:'fr',
+      german:'de',
+      italian:'it',
+      portuguese:'pt',
+      en:'en',
+      es:'es',
+      fr:'fr',
+      de:'de',
+      it:'it',
+      pt:'pt'
+    };
+
+    this.initUI();
+  }
+
+  initUI() {
+
+    this.activateBtn.onclick = () => this.activateAI();
+
+    this.toggleBtn.onclick = () => {
+      this.panel.classList.toggle('active');
+    };
+
+    this.closeBtn.onclick = () => {
+      this.panel.classList.remove('active');
+    };
+
+    this.executeBtn.onclick = () => {
+      this.executeCommand();
+    };
+
+    this.setStatus('Click Turn On AI');
+  }
+
+  async activateAI() {
+
+    this.isLoaded = true;
+
+    this.activateBtn.innerText = 'AI Ready';
+
+    this.activateBtn.style.background = '#28a745';
+
+    this.toggleBtn.classList.add('active');
+
+    this.executeBtn.disabled = false;
+
+    this.panel.classList.add('active');
+
+    this.setStatus('Ready');
+  }
+
+  setStatus(msg) {
+    this.statusEl.textContent = msg;
+  }
+
+  setCommandStatus(msg) {
+
+    this.commandStatus.classList.add('active');
+
+    this.commandStatus.textContent = msg;
+  }
+
+  parseCommand(command) {
+
+    let cmd = command.toLowerCase();
+
+    const match = cmd.match(
+      /(?:column\s*)?([a-z])\s*(?:to|into)\s*(?:column\s*)?([a-z])/i
+    );
+
+    if (!match) {
+      return {
+        error:'Try: translate column a to b spanish'
+      };
+    }
+
+    let targetLang = 'es';
+
+    for (const [name, code] of Object.entries(this.languageMap)) {
+
+      if (cmd.includes(name)) {
+        targetLang = code;
+      }
+    }
+
+    return {
+      fromCol: match[1].toUpperCase().charCodeAt(0)-65,
+      toCol: match[2].toUpperCase().charCodeAt(0)-65,
+      targetLang
+    };
+  }
+
+  getCellText(col,row) {
+
+    const r = this.table.rows[row];
+
+    if (!r) return '';
+
+    const c = r.cells[col+1];
+
+    return c ? c.innerText.trim() : '';
+  }
+
+  setCellText(col,row,text) {
+
+    const r = this.table.rows[row];
+
+    if (!r) return;
+
+    const c = r.cells[col+1];
+
+    if (c) {
+      c.innerText = text;
+    }
+  }
+
+  async executeCommand() {
+
+    const cmd = this.commandInput.value.trim();
+
+    if (!cmd) return;
+
+    const parsed = this.parseCommand(cmd);
+
+    if (parsed.error) {
+
+      this.setCommandStatus(parsed.error);
+
+      return;
+    }
+
+    const tasks = [];
+
+    for (let r=2; r<this.table.rows.length; r++) {
+
+      const text = this.getCellText(parsed.fromCol,r);
+
+      if (text) {
+
+        tasks.push({
+          row:r,
+          text
+        });
+      }
+    }
+
+    if (!tasks.length) {
+
+      this.setCommandStatus('No text found');
+
+      return;
+    }
+
+    let done = 0;
+
+    for (const task of tasks) {
+
+      const translated =
+        await window.fakeTranslate(
+          task.text,
+          parsed.targetLang
+        );
+
+      this.setCellText(
+        parsed.toCol,
+        task.row,
+        translated
+      );
+
+      done++;
+
+      const pct =
+        Math.round((done/tasks.length)*100);
+
+      this.progressFill.style.width =
+        pct + '%';
+
+      this.progressText.textContent =
+        done + '/' + tasks.length;
+    }
+
+    this.setCommandStatus(
+      'Done ' + done
+    );
+  }
+}
+
+const aiTable =
+  document.getElementById('sheet');
+
+if (aiTable) {
+
+  new SpreadsheetAI(aiTable);
+}
+</script>
+
+
+<script src="script.js"></script>
+
+
+  
+</body>
+</html>
