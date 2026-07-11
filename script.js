@@ -1858,3 +1858,86 @@ document.getElementById("stopRecordBtn")?.addEventListener("click", stopRecordin
         updateCellPracticeBadge(cell);
     }
 })();
+
+
+
+
+// =====================================================
+// BEGIN CONVERSION JS BLOCK
+// =====================================================
+
+function toggleConversion(){
+
+    const box =
+        document.getElementById(
+            "conversionBox"
+        );
+
+    box.style.display =
+        box.style.display === "block"
+        ? "none"
+        : "block";
+}
+
+
+async function startAudioConversion(){
+
+    const startCell =
+        document.getElementById(
+            "audioStartCell"
+        ).value.toUpperCase();
+
+    const endCell =
+        document.getElementById(
+            "audioEndCell"
+        ).value.toUpperCase();
+
+    const outputColumn =
+        document.getElementById(
+            "audioOutputColumn"
+        ).value.toUpperCase();
+
+    const progressContainer =
+        document.getElementById(
+            "audioProgressContainer"
+        );
+
+    const progressBar =
+        document.getElementById(
+            "audioProgressBar"
+        );
+
+    const progressText =
+        document.getElementById(
+            "audioProgressText"
+        );
+
+    progressContainer.style.display = "block";
+    progressText.style.display = "block";
+
+    /*
+    ==================================================
+    YOUR AUDIO ENGINE GOES HERE
+
+    Read each cell from startCell to endCell
+    Speak it using speechSynthesis
+    Record the audio
+    Save audio file
+    Insert 🎵 into outputColumn
+    Update progress bar
+    Continue until endCell
+
+    ==================================================
+    */
+
+    console.log(
+        "Convert:",
+        startCell,
+        endCell,
+        outputColumn
+    );
+}
+
+// =====================================================
+// END CONVERSION JS BLOCK
+// =====================================================
