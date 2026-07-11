@@ -1860,8 +1860,6 @@ document.getElementById("stopRecordBtn")?.addEventListener("click", stopRecordin
 })();
 
 
-
-
 // =====================================================
 // BEGIN CONVERSION JS BLOCK
 // =====================================================
@@ -1880,22 +1878,66 @@ function toggleConversion(){
 }
 
 
+// ---------------------------------------------
+// CELL HELPERS
+// ---------------------------------------------
+function parseCell(cellRef){
+
+    const match =
+        cellRef.match(/^([A-Z]+)(\d+)$/);
+
+    if(!match) return null;
+
+    return {
+        col:
+            match[1]
+            .charCodeAt(0) - 65,
+
+        row:
+            parseInt(match[2]) - 1
+    };
+}
+
+
+function getCellByCoords(row,col){
+
+    const table =
+        document.getElementById("sheet");
+
+    const tr =
+        table.rows[row + 2];
+
+    if(!tr) return null;
+
+    return tr.cells[col + 1];
+}
+
+
+// ---------------------------------------------
+// MAIN CONVERSION ENGINE
+// ---------------------------------------------
 async function startAudioConversion(){
 
     const startCell =
         document.getElementById(
             "audioStartCell"
-        ).value.toUpperCase();
+        ).value
+        .trim()
+        .toUpperCase();
 
     const endCell =
         document.getElementById(
             "audioEndCell"
-        ).value.toUpperCase();
+        ).value
+        .trim()
+        .toUpperCase();
 
     const outputColumn =
         document.getElementById(
             "audioOutputColumn"
-        ).value.toUpperCase();
+        ).value
+        .trim()
+        .toUpperCase();
 
     const progressContainer =
         document.getElementById(
@@ -1912,29 +1954,210 @@ async function startAudioConversion(){
             "audioProgressText"
         );
 
-    progressContainer.style.display = "block";
-    progressText.style.display = "block";
+    const start =
+        parseCell(startCell);
 
-    /*
-    ==================================================
-    YOUR AUDIO ENGINE GOES HERE
+    const end =
+        parseCell(endCell);
 
-    Read each cell from startCell to endCell
-    Speak it using speechSynthesis
-    Record the audio
-    Save audio file
-    Insert 🎵 into outputColumn
-    Update progress bar
-    Continue until endCell
+    const outCol =
+        outputColumn.charCodeAt(0)-65;
 
-    ==================================================
-    */
+    if(!start || !end){
+        alert(
+            "Invalid cell range."
+        );
+        return;
+    }
 
-    console.log(
-        "Convert:",
-        startCell,
-        endCell,
-        outputColumn
+    // -----------------------------------------
+    // Ask user for audio capture permission
+    // -----------------------------------------
+    alert(
+        "Choose THIS TAB and enable Share Tab Audio."
+    );
+
+    const captureStream =
+        await navigator.mediaDevices
+        .getDisplayMedia({
+            video:true,
+            audio:true
+        });
+
+    progressContainer.style.display =
+        "block";
+
+    progressText.style.display =
+        "block";
+
+    const totalCells =
+        (end.row - start.row) + 1;
+
+    let completed = 0;
+
+    for(
+        let r = start.row;
+        r <= end.row;
+        r++
+    ){
+
+        const sourceCell =
+            getCellByCoords(
+                r,
+                start.col
+            );
+
+        if(!sourceCell)
+            continue;
+
+        const text =
+            sourceCell.innerText.trim();
+
+        if(!text)
+            continue;
+
+        sourceCell.classList.add(
+            "reading"
+        );
+
+        progressText.innerText =
+            `Recording ${completed+1} / ${totalCells}`;
+
+        progressBar.style.width =
+            (
+                (completed / totalCells)
+                *100
+            ) + "%";
+
+        // -----------------------------
+        // START RECORDING
+        // -----------------------------
+        const chunks = [];
+
+        const recorder =
+            new MediaRecorder(
+                captureStream
+            );
+
+        recorder.ondataavailable =
+            e => {
+
+                if(
+                    e.data &&
+                    e.data.size > 0
+                ){
+                    chunks.push(e.data);
+                }
+            };
+
+        recorder.start();
+
+        // -----------------------------
+        // SPEAK CELL
+        // -----------------------------
+        await new Promise(
+            resolve=>{
+
+            const utterance =
+                new SpeechSynthesisUtterance(
+                    text
+                );
+
+            utterance.rate =
+                0.85;
+
+            utterance.onend =
+                ()=>{
+
+                    setTimeout(
+                        ()=>{
+
+                        recorder.stop();
+
+                    },300);
+
+                };
+
+            recorder.onstop =
+                ()=>{
+
+                    const blob =
+                        new Blob(
+                            chunks,
+                            {
+                                type:
+                                "audio/webm"
+                            }
+                        );
+
+                    const url =
+                        URL.createObjectURL(
+                            blob
+                        );
+
+                    const targetCell =
+                        getCellByCoords(
+                            r,
+                            outCol
+                        );
+
+                    if(targetCell){
+
+                        targetCell.innerHTML =
+                            "🎵";
+
+                        targetCell.dataset.audio =
+                            url;
+
+                        targetCell.style.cursor =
+                            "pointer";
+
+                        targetCell.onclick =
+                            function(){
+
+                            const audio =
+                                new Audio(
+                                    this.dataset.audio
+                                );
+
+                            audio.play();
+
+                        };
+                    }
+
+                    resolve();
+                };
+
+            speechSynthesis.speak(
+                utterance
+            );
+
+        });
+
+        sourceCell.classList.remove(
+            "reading"
+        );
+
+        completed++;
+
+        progressBar.style.width =
+            (
+                (completed / totalCells)
+                *100
+            ) + "%";
+    }
+
+    progressText.innerText =
+        `Finished ${completed} cells`;
+
+    captureStream
+        .getTracks()
+        .forEach(
+            t=>t.stop()
+        );
+
+    alert(
+        "Audio conversion complete."
     );
 }
 
