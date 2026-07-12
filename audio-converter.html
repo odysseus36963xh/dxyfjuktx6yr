@@ -97,10 +97,6 @@ cherry"></textarea>
     <input id="audioOutputColumn" type="text" placeholder="B">
   </div>
   <div class="field">
-    <label>Voice</label>
-    <select id="audioVoice"></select>
-  </div>
-  <div class="field">
     <label>Rate</label>
     <input id="audioRate" type="range" min="0.5" max="2" step="0.1" value="0.85">
   </div>
@@ -115,13 +111,15 @@ cherry"></textarea>
 <div id="audioProgressText">Waiting...</div>
 
 <div id="conversionNote">
-Note: browsers can't hand a script the raw audio bytes that speechSynthesis produces, so this
-records the sound the browser actually plays. When you click "Convert Range" your browser will
-ask you to share <b>this tab</b> — tick "Share tab audio" in that dialog, or nothing will be
-captured. Files download as <b>.webm</b> (plays in any browser, VLC, and most phones) since
-browsers can't natively encode true .mp3 client-side — say the word if you'd like a true-.mp3
-version added, it just needs an extra encoding step. Each cell in the output column also gets a
-🎵 (play) and ⬇ (re-download) icon after conversion.
+Note: the language/voice used for each cell comes from that <b>column's</b> dropdown at the top of
+the sheet (same as the main page) — set the source column's language there before converting.
+Browsers can't hand a script the raw audio bytes speechSynthesis produces, so this records the
+sound the browser actually plays: when you click "Convert Range" your browser will ask you to
+share <b>this tab</b> — tick "Share tab audio" in that dialog, or nothing will be captured. Files
+download as <b>.webm</b> (plays in any browser, VLC, and most phones) since browsers can't
+natively encode true .mp3 client-side — say the word if you'd like a true-.mp3 version added.
+Each output cell gets a 🎵 (play) and ⬇ (re-download) icon once its file is ready, and the sheet
+moves down one row at a time: read → capture → save → next row.
 </div>
 </div>
 
