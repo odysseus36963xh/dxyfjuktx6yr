@@ -253,53 +253,277 @@ window.uploadColumn = function () {
 };
 
 // -----------------------------------------------------
-// SAVE / LOAD TABLE (plain text grid + column languages, JSON)
+// HELPER: Blob <-> Base64 (needed to fold audio clips
+// into the same JSON save file as the text grid)
 // -----------------------------------------------------
-window.saveTable = function () {
-  const data = [];
-  for (let r = 1; r <= totalRows; r++) {
-    const rowVals = [];
-    for (let c = 0; c < TOTAL_COLS; c++) rowVals.push(getCellByCoords(r, c)?.innerText || "");
-    data.push(rowVals);
-  }
-  const langs = [];
-  for (let c = 0; c < TOTAL_COLS; c++) langs.push(getColumnLanguage(c));
+function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
 
-  const blob = new Blob([JSON.stringify({ data, langs })], { type: "application/json" });
-  downloadBlob(blob, "audio-converter-table.json");
+function base64ToBlob(dataUrl) {
+  const parts = dataUrl.split(";base64,");
+  const mimeType = parts[0].split(":")[1];
+  const rawBase64 = parts[1];
+  const byteCharacters = atob(rawBase64);
+  const byteArrays = [];
+  for (let offset = 0; offset < byteCharacters.length; offset += 1024) {
+    const slice = byteCharacters.slice(offset, offset + 1024);
+    const byteNumbers = new Array(slice.length);
+    for (let i = 0; i < slice.length; i++) byteNumbers[i] = slice.charCodeAt(i);
+    byteArrays.push(new Uint8Array(byteNumbers));
+  }
+  return new Blob(byteArrays, { type: mimeType });
+}
+
+function getTimestamp() {
+  const d = new Date();
+  const pad = n => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}_${pad(d.getHours())}-${pad(d.getMinutes())}-${pad(d.getSeconds())}`;
+}
+
+function downloadJSON(filename, data) {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+  downloadBlob(blob, filename);
+}
+
+// Same little "name your file" popup used on the main sheet page.
+function openSaveDialog(defaultName, onConfirm) {
+  const overlay = document.createElement("div");
+  overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;z-index:9999;";
+  const box = document.createElement("div");
+  box.style.cssText = "background:#fff;padding:20px;border-radius:10px;width:320px;font-family:Arial;color:#202124;";
+  box.innerHTML = `
+    <h3 style="margin-top:0;">Save Table</h3>
+    <input id="fileName" style="width:100%;padding:8px;box-sizing:border-box;" value="${defaultName}">
+    <div style="margin-top:12px;display:flex;justify-content:flex-end;gap:8px;">
+      <button id="cancel">Cancel</button>
+      <button id="save">Save</button>
+    </div>`;
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+  overlay.querySelector("#cancel").onclick = () => overlay.remove();
+  overlay.querySelector("#save").onclick = () => {
+    const name = overlay.querySelector("#fileName").value.trim();
+    overlay.remove();
+    onConfirm(name || defaultName);
+  };
+}
+
+// -----------------------------------------------------
+// SAVE / LOAD TABLE
+// Uses the SAME JSON shape as the main sheet page
+// ({ cells, languages, media, ... }) so files saved on
+// either page can be opened on the other. Audio clips
+// sitting in "audio-ready" output cells get folded into
+// `media` as base64 (keyed the same way the main page
+// keys its media: "row-col", both 0-based), with their
+// original filenames kept alongside in `audioFilenames`
+// so re-downloading still works after a reload.
+// -----------------------------------------------------
+async function exportTableData() {
+  const cells = [];
+  const languages = [];
+  const media = {};
+  const audioFilenames = {};
+
+  for (let c = 0; c < TOTAL_COLS; c++) languages.push(getColumnLanguage(c));
+
+  for (let r = 1; r <= totalRows; r++) {
+    const rowData = [];
+    for (let c = 0; c < TOTAL_COLS; c++) {
+      const cell = getCellByCoords(r, c);
+      if (!cell) { rowData.push(""); continue; }
+
+      if (cell.dataset.audio) {
+        const cellKey = `${r - 1}-${c}`;
+        try {
+          const res = await fetch(cell.dataset.audio);
+          const blob = await res.blob();
+          const base64 = await blobToBase64(blob);
+          media[cellKey] = { urls: [base64], types: [blob.type || "audio/webm"] };
+          audioFilenames[cellKey] = cell.dataset.filename || "";
+        } catch (err) {
+          console.error("Audio export failed for cell", r, c, err);
+        }
+        rowData.push(""); // the visible content there is the audio icons, not text
+      } else {
+        rowData.push(cell.innerText.trim());
+      }
+    }
+    cells.push(rowData);
+  }
+
+  return {
+    createdAt: new Date().toISOString(),
+    columns: TOTAL_COLS,
+    rows: totalRows,
+    cells,
+    languages,
+    media,
+    audioFilenames
+  };
+}
+
+window.saveTable = function () {
+  const defaultName = `audio-converter-table_${getTimestamp()}.json`;
+  openSaveDialog(defaultName, async (finalName) => {
+    const data = await exportTableData();
+    if (!data) return;
+
+    const jsonString = JSON.stringify(data, null, 2);
+    const sizeMB = (new Blob([jsonString]).size / 1024 / 1024).toFixed(2);
+    if (sizeMB > 10) {
+      if (!confirm(`Warning: Save file is ${sizeMB}MB. Continue?`)) return;
+    }
+
+    downloadJSON(finalName.endsWith(".json") ? finalName : finalName + ".json", data);
+  });
 };
 
 window.uploadTable = function () {
   document.getElementById("tableFileInput").click();
 };
+
 document.getElementById("tableFileInput").addEventListener("change", function (e) {
   const file = e.target.files[0];
   if (!file) return;
   const reader = new FileReader();
-  reader.onload = function () {
+  reader.onload = async function () {
     try {
       const parsed = JSON.parse(reader.result);
-      const data = parsed.data || parsed; // support old flat-array saves too
-      if (data.length > totalRows) addNewRows(data.length - totalRows);
-      data.forEach((rowVals, i) => {
+
+      // Accept three shapes: this page's/main page's current
+      // format, this page's older { data, langs } format, and
+      // the oldest bare flat-array-of-rows format.
+      let rows, langs, media, audioFilenames;
+
+      if (Array.isArray(parsed.cells) && Array.isArray(parsed.languages)) {
+        rows = parsed.cells;
+        langs = parsed.languages;
+        media = parsed.media || {};
+        audioFilenames = parsed.audioFilenames || {};
+      } else if (Array.isArray(parsed.data)) {
+        rows = parsed.data;
+        langs = parsed.langs || [];
+        media = {};
+        audioFilenames = {};
+      } else if (Array.isArray(parsed)) {
+        rows = parsed;
+        langs = [];
+        media = {};
+        audioFilenames = {};
+      } else {
+        throw new Error("Unrecognized file format");
+      }
+
+      if (rows.length > totalRows) addNewRows(rows.length - totalRows);
+
+      rows.forEach((rowVals, i) => {
         rowVals.forEach((val, c) => {
           const cell = getCellByCoords(i + 1, c);
-          if (cell) cell.innerText = val;
+          if (!cell) return;
+          cell.innerHTML = "";
+          cell.classList.remove("audio-ready");
+          delete cell.dataset.audio;
+          delete cell.dataset.filename;
+          cell.innerText = val || "";
         });
       });
-      if (parsed.langs) {
-        parsed.langs.forEach((lang, c) => {
+
+      if (langs.length) {
+        langs.forEach((lang, c) => {
           const select = sheetTable.rows[1]?.cells[c + 1]?.querySelector("select");
           if (select && [...select.options].some(o => o.value === lang)) select.value = lang;
         });
       }
+
+      for (const cellKey in media) {
+        const entry = media[cellKey];
+        if (!entry || !entry.urls || !entry.urls.length) continue;
+        const [rIdx, cIdx] = cellKey.split("-").map(Number);
+        try {
+          const blob = base64ToBlob(entry.urls[0]);
+          const filename = (audioFilenames && audioFilenames[cellKey]) || `cell_r${rIdx + 1}.webm`;
+          const targetCell = getCellByCoords(rIdx + 1, cIdx);
+          if (targetCell) placeAudioInCell(targetCell, blob, filename);
+        } catch (err) {
+          console.error("Failed to restore audio for cell", cellKey, err);
+        }
+      }
+
+      alert("✅ Table uploaded successfully!");
     } catch (err) {
-      alert("Couldn't read that file — expected a JSON table saved from this page.");
+      alert("Couldn't read that file — expected a JSON table saved from this page or the main sheet.");
     }
   };
   reader.readAsText(file);
   this.value = "";
 });
+
+// -----------------------------------------------------
+// EXTRACT RANGE (copy or remove a block of cells)
+// -----------------------------------------------------
+window.toggleExtract = function () {
+  const box = document.getElementById("extractBox");
+  if (!box) return;
+  const uploadBox = document.getElementById("uploadBox");
+  if (uploadBox) uploadBox.style.display = "none";
+  box.style.display = box.style.display === "block" ? "none" : "block";
+};
+
+window.extractRange = function (mode) {
+  const startRef = document.getElementById("extractStart").value.trim().toUpperCase();
+  const endRef = document.getElementById("extractEnd").value.trim().toUpperCase();
+
+  const start = parseCell(startRef);
+  const end = parseCell(endRef);
+
+  if (!start || !end) {
+    alert("Invalid cell format. Use format like A1 or C5.");
+    return;
+  }
+
+  const startRow = Math.min(start.row, end.row);
+  const endRow = Math.max(start.row, end.row);
+  const startCol = Math.min(start.col, end.col);
+  const endCol = Math.max(start.col, end.col);
+
+  const extracted = [];
+
+  for (let r = startRow; r <= endRow; r++) {
+    const rowData = [];
+    for (let c = startCol; c <= endCol; c++) {
+      const cell = getCellByCoords(r, c);
+      if (!cell) continue;
+      rowData.push(cell.innerText || "");
+      if (mode === "remove") {
+        cell.innerHTML = "";
+        cell.classList.remove("audio-ready");
+        delete cell.dataset.audio;
+        delete cell.dataset.filename;
+      }
+    }
+    extracted.push(rowData.join("\t"));
+  }
+
+  if (mode === "copy") {
+    const text = extracted.join("\n");
+    navigator.clipboard.writeText(text).then(() => {
+      alert("✅ Range copied!");
+    }).catch(() => {
+      alert("Clipboard blocked by browser.");
+    });
+  }
+
+  if (mode === "remove") {
+    alert("✅ Range cleared!");
+  }
+};
 
 // -----------------------------------------------------
 // TOGGLES
