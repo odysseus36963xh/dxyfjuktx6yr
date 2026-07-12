@@ -12,7 +12,9 @@ let totalRows = 26;
 const sheetTable = document.getElementById("sheet");
 
 // -----------------------------------------------------
-// BUILD TABLE
+// BUILD TABLE  (row 0 = column letters, row 1 = language
+// select per column, row 2+ = data — same layout as the
+// main sheet page)
 // -----------------------------------------------------
 const staticCells = Array(TOTAL_COLS).fill('<td contenteditable="true"></td>').join("");
 
@@ -21,12 +23,18 @@ function buildTable() {
   for (let c = 0; c < TOTAL_COLS; c++) headerHtml += `<th>${String.fromCharCode(65 + c)}</th>`;
   headerHtml += "</tr>";
 
+  let selRow = "<tr><th></th>";
+  for (let c = 0; c < TOTAL_COLS; c++) {
+    selRow += `<th><select class="col-select"><option>Off</option></select></th>`;
+  }
+  selRow += "</tr>";
+
   let bodyHtml = "";
   for (let r = 1; r <= totalRows; r++) {
     bodyHtml += `<tr><th class="row-head">${r}</th>${staticCells}</tr>`;
   }
 
-  sheetTable.innerHTML = headerHtml + bodyHtml;
+  sheetTable.innerHTML = headerHtml + selRow + bodyHtml;
 }
 buildTable();
 
@@ -40,14 +48,19 @@ function addNewRows(count) {
   sheetTable.insertAdjacentHTML("beforeend", buf);
 }
 
-// Row layout: row[0] = column letters, row[1..] = data (row N -> table.rows[N])
+// Row layout: row[0]=letters, row[1]=language selects, row[2..]=data.
+// rowNum is 1-based (row "1" on screen -> table.rows[2]).
 function getDataRow(rowNum) {
-  return sheetTable.rows[rowNum]; // rowNum is 1-based, header is row 0
+  return sheetTable.rows[rowNum + 1];
 }
 function getCellByCoords(rowNum, col) {
   const row = getDataRow(rowNum);
   if (!row) return null;
   return row.cells[col + 1]; // +1 for the row-number header cell
+}
+function getColumnLanguage(col) {
+  const select = sheetTable.rows[1]?.cells[col + 1]?.querySelector("select");
+  return select?.value || "Off";
 }
 
 // -----------------------------------------------------
@@ -66,21 +79,82 @@ function parseCell(ref) {
 }
 
 // -----------------------------------------------------
-// VOICES / LANGUAGES
+// VOICES / LANGUAGES  (mirrors the main page's logic so
+// each column's dropdown lists every language your
+// browser actually has a voice for)
 // -----------------------------------------------------
+function normalizeLang(code) {
+  return code?.trim().replace("_", "-").toLowerCase();
+}
+
+function getBrowserLanguages() {
+  const unique = new Map();
+  voices.forEach(v => {
+    if (!v.lang) return;
+    const key = normalizeLang(v.lang);
+    if (!unique.has(key)) unique.set(key, v.lang);
+  });
+  return [...unique.values()].sort((a, b) => a.localeCompare(b));
+}
+
+function getLanguageLabel(lang) {
+  try {
+    const parts = lang.split("-");
+    const languageNames = new Intl.DisplayNames([navigator.language || "en"], { type: "language" });
+    const regionNames = new Intl.DisplayNames([navigator.language || "en"], { type: "region" });
+    const languageName = languageNames.of(parts[0]) || parts[0];
+    const regionName = parts[1] ? regionNames.of(parts[1]) : "";
+    return regionName ? `${languageName} (${regionName}) — ${lang}` : `${languageName} — ${lang}`;
+  } catch {
+    return lang;
+  }
+}
+
+function getVoice(langCode) {
+  if (!langCode || langCode === "Off") return null;
+  const wanted = normalizeLang(langCode);
+  let voice = voices.find(v => normalizeLang(v.lang) === wanted);
+  if (voice) return voice;
+  const base = wanted.split("-")[0];
+  return voices.find(v => normalizeLang(v.lang).split("-")[0] === base) || null;
+}
+
+function updateLanguageDropdowns() {
+  const selectorRow = sheetTable.rows[1];
+  if (!selectorRow) return;
+  const langs = getBrowserLanguages();
+  if (!langs.length) return;
+
+  for (let c = 1; c < selectorRow.cells.length; c++) {
+    const select = selectorRow.cells[c]?.querySelector("select");
+    if (!select) continue;
+    const currentValue = select.value || "Off";
+
+    select.innerHTML = "";
+    const offOption = document.createElement("option");
+    offOption.value = "Off";
+    offOption.textContent = "Off";
+    select.appendChild(offOption);
+
+    langs.forEach(lang => {
+      const option = document.createElement("option");
+      option.value = lang;
+      option.textContent = getLanguageLabel(lang);
+      select.appendChild(option);
+    });
+
+    if (currentValue === "Off") { select.value = "Off"; continue; }
+    const normalizedCurrent = normalizeLang(currentValue);
+    const base = normalizedCurrent?.split("-")[0];
+    const exact = langs.find(l => normalizeLang(l) === normalizedCurrent);
+    const baseMatch = langs.find(l => normalizeLang(l).split("-")[0] === base);
+    select.value = exact || baseMatch || "Off";
+  }
+}
+
 function loadVoices() {
   voices = speechSynthesis.getVoices() || [];
-  const select = document.getElementById("audioVoice");
-  if (!select) return;
-  const current = select.value;
-  select.innerHTML = "";
-  voices.forEach(v => {
-    const opt = document.createElement("option");
-    opt.value = v.name;
-    opt.textContent = `${v.name} (${v.lang})`;
-    select.appendChild(opt);
-  });
-  if (current && voices.some(v => v.name === current)) select.value = current;
+  updateLanguageDropdowns();
 }
 if ("speechSynthesis" in window) {
   speechSynthesis.onvoiceschanged = loadVoices;
@@ -89,20 +163,16 @@ if ("speechSynthesis" in window) {
   setTimeout(loadVoices, 1000);
 }
 
-function getSelectedVoice() {
-  const name = document.getElementById("audioVoice")?.value;
-  return voices.find(v => v.name === name) || null;
-}
-
 // -----------------------------------------------------
-// SPEAK ONE CELL (used by preview reading)
+// SPEAK ONE CELL — uses that cell's column language
 // -----------------------------------------------------
-function speak(text, rate) {
+function speak(text, lang, rate) {
   return new Promise(resolve => {
     if (!text || !text.trim()) return resolve();
     const utter = new SpeechSynthesisUtterance(text);
-    const voice = getSelectedVoice();
+    const voice = getVoice(lang);
     if (voice) { utter.voice = voice; utter.lang = voice.lang; }
+    else if (lang && lang !== "Off") { utter.lang = lang; }
     utter.rate = rate || 1;
     utter.onend = resolve;
     utter.onerror = resolve;
@@ -141,8 +211,11 @@ async function startReading() {
       const text = cell.innerText.trim();
       if (!text) continue;
 
+      const lang = getColumnLanguage(start.col);
+      if (lang === "Off") continue;
+
       cell.classList.add("reading");
-      await speak(text, rate);
+      await speak(text, lang, rate);
       cell.classList.remove("reading");
     }
   } finally {
@@ -180,18 +253,19 @@ window.uploadColumn = function () {
 };
 
 // -----------------------------------------------------
-// SAVE / LOAD TABLE (plain text grid, JSON)
+// SAVE / LOAD TABLE (plain text grid + column languages, JSON)
 // -----------------------------------------------------
 window.saveTable = function () {
   const data = [];
   for (let r = 1; r <= totalRows; r++) {
     const rowVals = [];
-    for (let c = 0; c < TOTAL_COLS; c++) {
-      rowVals.push(getCellByCoords(r, c)?.innerText || "");
-    }
+    for (let c = 0; c < TOTAL_COLS; c++) rowVals.push(getCellByCoords(r, c)?.innerText || "");
     data.push(rowVals);
   }
-  const blob = new Blob([JSON.stringify(data)], { type: "application/json" });
+  const langs = [];
+  for (let c = 0; c < TOTAL_COLS; c++) langs.push(getColumnLanguage(c));
+
+  const blob = new Blob([JSON.stringify({ data, langs })], { type: "application/json" });
   downloadBlob(blob, "audio-converter-table.json");
 };
 
@@ -204,7 +278,8 @@ document.getElementById("tableFileInput").addEventListener("change", function (e
   const reader = new FileReader();
   reader.onload = function () {
     try {
-      const data = JSON.parse(reader.result);
+      const parsed = JSON.parse(reader.result);
+      const data = parsed.data || parsed; // support old flat-array saves too
       if (data.length > totalRows) addNewRows(data.length - totalRows);
       data.forEach((rowVals, i) => {
         rowVals.forEach((val, c) => {
@@ -212,6 +287,12 @@ document.getElementById("tableFileInput").addEventListener("change", function (e
           if (cell) cell.innerText = val;
         });
       });
+      if (parsed.langs) {
+        parsed.langs.forEach((lang, c) => {
+          const select = sheetTable.rows[1]?.cells[c + 1]?.querySelector("select");
+          if (select && [...select.options].some(o => o.value === lang)) select.value = lang;
+        });
+      }
     } catch (err) {
       alert("Couldn't read that file — expected a JSON table saved from this page.");
     }
@@ -260,11 +341,16 @@ function downloadBlob(blob, filename) {
   setTimeout(() => URL.revokeObjectURL(url), 5000);
 }
 
+function wait(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 // -----------------------------------------------------
 // MAIN CONVERSION ENGINE
-// Reads each cell in the source range aloud, records the
-// audio, names the file after the cell's text, and drops
-// a playable / downloadable result into the output column.
+// One cell at a time: highlight -> speak+record -> stop
+// recording -> save the file into the output column ->
+// move to the next row down. Language/voice for each row
+// comes from the SOURCE column's language dropdown.
 // -----------------------------------------------------
 async function startAudioConversion() {
 
@@ -283,6 +369,7 @@ async function startAudioConversion() {
   }
 
   const outCol = colToIndex(outputColumn);
+  const sourceLang = getColumnLanguage(start.col);
 
   const progressContainer = document.getElementById("audioProgressContainer");
   const progressBar = document.getElementById("audioProgressBar");
@@ -290,19 +377,33 @@ async function startAudioConversion() {
 
   alert('Choose "This Tab" and make sure "Share tab audio" is checked — that\'s what lets the converter record what the browser speaks.');
 
-  let captureStream;
+  let displayStream;
   try {
-    captureStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+    displayStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
   } catch (err) {
     alert("Audio capture was cancelled or denied, so conversion can't continue.");
     return;
   }
 
-  if (!captureStream.getAudioTracks().length) {
+  const audioTracks = displayStream.getAudioTracks();
+  if (!audioTracks.length) {
     alert('No audio track was shared. Re-run and make sure "Share tab audio" is checked in the picker.');
-    captureStream.getTracks().forEach(t => t.stop());
+    displayStream.getTracks().forEach(t => t.stop());
     return;
   }
+
+  // Record from an audio-only stream. Mixing an audio-only
+  // MediaRecorder mimeType with a stream that also carries a
+  // video track is what triggers "Failed to execute 'start'"
+  // in Chrome/Edge, so we split the audio track off here and
+  // stop the (unused) video track immediately.
+  displayStream.getVideoTracks().forEach(t => t.stop());
+  const audioStream = new MediaStream(audioTracks);
+
+  const mimeType =
+    (window.MediaRecorder && MediaRecorder.isTypeSupported("audio/webm;codecs=opus")) ? "audio/webm;codecs=opus" :
+    (window.MediaRecorder && MediaRecorder.isTypeSupported("audio/webm")) ? "audio/webm" :
+    ""; // let the browser pick if neither is reported supported
 
   progressContainer.style.display = "block";
   progressText.style.display = "block";
@@ -323,80 +424,112 @@ async function startAudioConversion() {
     progressText.innerText = `Recording ${completed + 1} / ${totalCells}: "${text}"`;
     progressBar.style.width = ((completed / totalCells) * 100) + "%";
 
-    const chunks = [];
-    const recorder = new MediaRecorder(captureStream, { mimeType: "audio/webm" });
-    recorder.ondataavailable = e => { if (e.data && e.data.size > 0) chunks.push(e.data); };
+    try {
+      const blob = await recordOneCell(text, sourceLang, rate, audioStream, mimeType);
 
-    await new Promise(resolve => {
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.rate = rate;
-      const voice = getSelectedVoice();
-      if (voice) { utterance.voice = voice; utterance.lang = voice.lang; }
+      const targetCell = getCellByCoords(r, outCol);
+      if (targetCell) {
+        let baseName = sanitizeFilename(text, `cell_r${r}`);
+        let filename = baseName;
+        let n = 2;
+        while (usedNames.has(filename)) { filename = `${baseName}_${n}`; n++; }
+        usedNames.add(filename);
+        filename += ".webm";
 
-      recorder.onstop = () => {
-        const blob = new Blob(chunks, { type: "audio/webm" });
-        const url = URL.createObjectURL(blob);
-
-        const targetCell = getCellByCoords(r, outCol);
-        if (targetCell) {
-          let baseName = sanitizeFilename(text, `cell_r${r}`);
-          let filename = baseName;
-          let n = 2;
-          while (usedNames.has(filename)) {
-            filename = `${baseName}_${n}`;
-            n++;
-          }
-          usedNames.add(filename);
-          filename += ".webm";
-
-          targetCell.innerHTML = "";
-          targetCell.dataset.audio = url;
-          targetCell.dataset.filename = filename;
-          targetCell.classList.add("audio-ready");
-
-          const playIcon = document.createElement("span");
-          playIcon.textContent = "🎵";
-          playIcon.className = "audio-icon";
-          playIcon.title = "Play";
-          playIcon.onclick = ev => {
-            ev.stopPropagation();
-            new Audio(targetCell.dataset.audio).play();
-          };
-
-          const dlIcon = document.createElement("span");
-          dlIcon.textContent = "⬇";
-          dlIcon.className = "audio-icon";
-          dlIcon.title = "Download " + filename;
-          dlIcon.onclick = ev => {
-            ev.stopPropagation();
-            fetch(targetCell.dataset.audio)
-              .then(res => res.blob())
-              .then(b => downloadBlob(b, targetCell.dataset.filename));
-          };
-
-          targetCell.appendChild(playIcon);
-          targetCell.appendChild(dlIcon);
-          targetCell.appendChild(document.createTextNode(" " + filename));
-
-          if (autoDownload) downloadBlob(blob, filename);
-        }
-        resolve();
-      };
-
-      recorder.start();
-      // small lead-in so the recorder is definitely rolling before speech starts
-      setTimeout(() => speechSynthesis.speak(utterance), 200);
-
-      utterance.onend = () => setTimeout(() => recorder.stop(), 300);
-      utterance.onerror = () => setTimeout(() => recorder.stop(), 300);
-    });
+        placeAudioInCell(targetCell, blob, filename);
+        if (autoDownload) downloadBlob(blob, filename);
+      }
+    } catch (err) {
+      console.error("Recording failed for cell", r, err);
+      progressText.innerText = `Skipped row ${r} (recording error) — continuing...`;
+    }
 
     sourceCell.classList.remove("reading");
     completed++;
     progressBar.style.width = ((completed / totalCells) * 100) + "%";
+
+    // Brief pause so the previous MediaRecorder instance is
+    // fully released before the next one is created.
+    await wait(150);
   }
 
   progressText.innerText = `Finished ${completed} cells`;
-  captureStream.getTracks().forEach(t => t.stop());
+  displayStream.getTracks().forEach(t => t.stop());
   alert(`Audio conversion complete — ${completed} file${completed === 1 ? "" : "s"} created${autoDownload ? " and downloaded" : ""}.`);
+}
+
+// Records exactly one utterance from the shared audio-only
+// stream and resolves with the resulting Blob.
+function recordOneCell(text, lang, rate, audioStream, mimeType) {
+  return new Promise((resolve, reject) => {
+    let recorder;
+    try {
+      recorder = mimeType ? new MediaRecorder(audioStream, { mimeType }) : new MediaRecorder(audioStream);
+    } catch (err) {
+      reject(err);
+      return;
+    }
+
+    const chunks = [];
+    recorder.ondataavailable = e => { if (e.data && e.data.size > 0) chunks.push(e.data); };
+    recorder.onerror = e => reject(e.error || e);
+    recorder.onstop = () => resolve(new Blob(chunks, { type: recorder.mimeType || "audio/webm" }));
+
+    try {
+      recorder.start();
+    } catch (err) {
+      reject(err);
+      return;
+    }
+
+    // Small lead-in so the recorder is definitely rolling
+    // before speech starts, then speak the cell.
+    setTimeout(() => {
+      const utterance = new SpeechSynthesisUtterance(text);
+      const voice = getVoice(lang);
+      if (voice) { utterance.voice = voice; utterance.lang = voice.lang; }
+      else if (lang && lang !== "Off") { utterance.lang = lang; }
+      utterance.rate = rate;
+
+      const finish = () => setTimeout(() => {
+        if (recorder.state !== "inactive") recorder.stop();
+      }, 300);
+
+      utterance.onend = finish;
+      utterance.onerror = finish;
+      speechSynthesis.speak(utterance);
+    }, 200);
+  });
+}
+
+function placeAudioInCell(targetCell, blob, filename) {
+  const url = URL.createObjectURL(blob);
+  targetCell.innerHTML = "";
+  targetCell.dataset.audio = url;
+  targetCell.dataset.filename = filename;
+  targetCell.classList.add("audio-ready");
+
+  const playIcon = document.createElement("span");
+  playIcon.textContent = "🎵";
+  playIcon.className = "audio-icon";
+  playIcon.title = "Play";
+  playIcon.onclick = ev => {
+    ev.stopPropagation();
+    new Audio(targetCell.dataset.audio).play();
+  };
+
+  const dlIcon = document.createElement("span");
+  dlIcon.textContent = "⬇";
+  dlIcon.className = "audio-icon";
+  dlIcon.title = "Download " + filename;
+  dlIcon.onclick = ev => {
+    ev.stopPropagation();
+    fetch(targetCell.dataset.audio)
+      .then(res => res.blob())
+      .then(b => downloadBlob(b, targetCell.dataset.filename));
+  };
+
+  targetCell.appendChild(playIcon);
+  targetCell.appendChild(dlIcon);
+  targetCell.appendChild(document.createTextNode(" " + filename));
 }
