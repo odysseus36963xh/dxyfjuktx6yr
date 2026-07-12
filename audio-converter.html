@@ -53,12 +53,33 @@ td.audio-ready{cursor:pointer;}
 <button onclick="uploadTable()">Upload Table</button>
 <input type="file" id="tableFileInput" accept=".json" style="display:none">
 <button onclick="toggleUpload()">Upload Column (vocab list)</button>
-  <button onclick="toggleExtract()">Extract Column</button>
+ <button onclick="toggleExtract()">Extract Column</button>
 <button onclick="toggleReader()">Reader Options</button>
 <button onclick="startReading()">Preview: Start Reading</button>
 <button onclick="stopReading()">Stop</button>
 <button onclick="toggleConversion()" style="background:#8e24aa;">🎵 Conversion</button>
 </header>
+
+
+  <!-- ===============================
+    EXTRACT POPUP BOX
+================================ -->
+<div id="extractBox" style="display:none; margin-top:10px; border:1px solid #ccc; padding:10px; border-radius:8px; background:#111; color:#fff;">
+
+<h3>Extract Range</h3>
+
+<label>Start Cell:</label>
+<input type="text" id="extractStart" placeholder="A1">
+
+<label>End Cell:</label>
+<input type="text" id="extractEnd" placeholder="C5">
+
+<div style="margin-top:10px;">
+<button onclick="extractRange('copy')">📋 Copy</button>
+<button onclick="extractRange('remove')">🗑 Remove</button>
+</div>
+
+</div>
 
 <div id="uploadBox">
 <label>Paste one word/phrase per line (or comma separated if "across"):</label>
