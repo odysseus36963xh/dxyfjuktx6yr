@@ -253,8 +253,7 @@ window.uploadColumn = function () {
 };
 
 // -----------------------------------------------------
-// HELPER: Blob <-> Base64 (needed to fold audio clips
-// into the same JSON save file as the text grid)
+// HELPER: Blob <-> Base64
 // -----------------------------------------------------
 function blobToBase64(blob) {
   return new Promise((resolve, reject) => {
@@ -291,7 +290,6 @@ function downloadJSON(filename, data) {
   downloadBlob(blob, filename);
 }
 
-// Same little "name your file" popup used on the main sheet page.
 function openSaveDialog(defaultName, onConfirm) {
   const overlay = document.createElement("div");
   overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;z-index:9999;";
@@ -316,14 +314,6 @@ function openSaveDialog(defaultName, onConfirm) {
 
 // -----------------------------------------------------
 // SAVE / LOAD TABLE
-// Uses the SAME JSON shape as the main sheet page
-// ({ cells, languages, media, ... }) so files saved on
-// either page can be opened on the other. Audio clips
-// sitting in "audio-ready" output cells get folded into
-// `media` as base64 (keyed the same way the main page
-// keys its media: "row-col", both 0-based), with their
-// original filenames kept alongside in `audioFilenames`
-// so re-downloading still works after a reload.
 // -----------------------------------------------------
 async function exportTableData() {
   const cells = [];
@@ -350,7 +340,7 @@ async function exportTableData() {
         } catch (err) {
           console.error("Audio export failed for cell", r, c, err);
         }
-        rowData.push(""); // the visible content there is the audio icons, not text
+        rowData.push("");
       } else {
         rowData.push(cell.innerText.trim());
       }
@@ -396,10 +386,6 @@ document.getElementById("tableFileInput").addEventListener("change", function (e
   reader.onload = async function () {
     try {
       const parsed = JSON.parse(reader.result);
-
-      // Accept three shapes: this page's/main page's current
-      // format, this page's older { data, langs } format, and
-      // the oldest bare flat-array-of-rows format.
       let rows, langs, media, audioFilenames;
 
       if (Array.isArray(parsed.cells) && Array.isArray(parsed.languages)) {
@@ -466,7 +452,7 @@ document.getElementById("tableFileInput").addEventListener("change", function (e
 });
 
 // -----------------------------------------------------
-// EXTRACT RANGE (copy or remove a block of cells)
+// EXTRACT RANGE
 // -----------------------------------------------------
 window.toggleExtract = function () {
   const box = document.getElementById("extractBox");
@@ -524,6 +510,7 @@ window.extractRange = function (mode) {
     alert("✅ Range cleared!");
   }
 };
+
 
 // -----------------------------------------------------
 // TOGGLES
