@@ -2164,3 +2164,82 @@ async function startAudioConversion(){
 // =====================================================
 // END CONVERSION JS BLOCK
 // =====================================================
+
+
+
+
+
+function toggleExtract() {
+  const box = document.getElementById("extractBox");
+  if (!box) return;
+
+  // Close upload if open (keeps UI clean)
+  const uploadBox = document.getElementById("uploadBox");
+  if (uploadBox) uploadBox.style.display = "none";
+
+  box.style.display = box.style.display === "block" ? "none" : "block";
+}
+
+// ===============================
+// EXTRACT RANGE
+// ===============================
+function extractRange(mode) {
+  const table = document.getElementById("sheet");
+  if (!table) {
+    alert("Table not found.");
+    return;
+  }
+
+  const startRef = document.getElementById("extractStart").value.trim().toUpperCase();
+  const endRef   = document.getElementById("extractEnd").value.trim().toUpperCase();
+
+  const start = parseCell(startRef);
+  const end   = parseCell(endRef);
+
+  if (!start || !end) {
+    alert("Invalid cell format. Use format like A1 or C5.");
+    return;
+  }
+
+  // Normalize selection (handles reversed input)
+  const startRow = Math.min(start.row, end.row);
+  const endRow   = Math.max(start.row, end.row);
+  const startCol = Math.min(start.col, end.col);
+  const endCol   = Math.max(start.col, end.col);
+
+  let extracted = [];
+
+  for (let r = startRow; r <= endRow; r++) {
+    const tableRow = table.rows[r + 1]; // +1 offset (header row)
+    if (!tableRow) continue;
+
+    let rowData = [];
+
+    for (let c = startCol; c <= endCol; c++) {
+      const cell = tableRow.cells[c + 1]; // +1 skip row number column
+      if (!cell) continue;
+
+      rowData.push(cell.innerText || "");
+
+      if (mode === "remove") {
+        cell.innerText = "";
+      }
+    }
+
+    extracted.push(rowData.join("\t"));
+  }
+
+  if (mode === "copy") {
+    const text = extracted.join("\n");
+
+    navigator.clipboard.writeText(text).then(() => {
+      alert("✅ Range copied!");
+    }).catch(() => {
+      alert("Clipboard blocked by browser.");
+    });
+  }
+
+  if (mode === "remove") {
+    alert("✅ Range cleared!");
+  }
+}
