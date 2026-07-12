@@ -229,12 +229,56 @@ async function startReading() {
 // -----------------------------------------------------
 window.uploadColumn = function () {
   const rawText = document.getElementById("columnData")?.value?.trim();
-  if (!rawText) { alert("Please paste some text."); return; }
-
   const startInput = document.getElementById("startCellUpload")?.value?.trim().toUpperCase() || "A1";
   const start = parseCell(startInput);
   if (!start) { alert("Invalid cell format. Use A1, B5, C12, etc."); return; }
 
+  // No text typed/pasted -> if there's a recent extraction (possibly
+  // holding audio clips), paste that block back in as real cells,
+  // rebuilding audio-ready cells instead of plain text.
+  if (!rawText) {
+    if (!window.lastExtractedData || !window.lastExtractedData.length) {
+      alert("Please paste some text, or run Extract Range first so there's something to paste back.");
+      return;
+    }
+
+    const rows = window.lastExtractedData;
+    const neededRows = (start.row - 1) + rows.length;
+    if (neededRows > totalRows) addNewRows(neededRows - totalRows);
+
+    let placed = 0;
+    let hadAudio = false;
+
+    rows.forEach((rowSnapshot, ri) => {
+      rowSnapshot.forEach((snap, ci) => {
+        if (!snap) return;
+        const cell = getCellByCoords(start.row + ri, start.col + ci);
+        if (!cell) return;
+
+        cell.innerHTML = "";
+        cell.classList.remove("audio-ready");
+        delete cell.dataset.audio;
+        delete cell.dataset.filename;
+
+        if (snap.audioURL) {
+          hadAudio = true;
+          fetch(snap.audioURL)
+            .then(res => res.blob())
+            .then(blob => placeAudioInCell(cell, blob, snap.filename || "audio.webm"))
+            .catch(() => { cell.innerText = snap.label || ""; });
+        } else {
+          cell.innerText = snap.text || "";
+        }
+        placed++;
+      });
+    });
+
+    alert(`Pasted back ${placed} cell${placed === 1 ? "" : "s"} from the last extraction${hadAudio ? " (audio clips restored)" : ""}.`);
+    return;
+  }
+
+  // Normal path: plain pasted text, laid out down a column or
+  // across a row exactly as before.
   const direction = document.getElementById("uploadDirection")?.value || "down";
   const lines = rawText.split(/\r?\n/).filter(x => x.trim() !== "");
   if (!lines.length) return;
@@ -246,7 +290,13 @@ window.uploadColumn = function () {
     const r = direction === "down" ? start.row + i : start.row;
     const c = direction === "down" ? start.col : start.col + i;
     const cell = getCellByCoords(r, c);
-    if (cell) cell.innerText = lines[i].trim();
+    if (cell) {
+      cell.innerHTML = "";
+      cell.classList.remove("audio-ready");
+      delete cell.dataset.audio;
+      delete cell.dataset.filename;
+      cell.innerText = lines[i].trim();
+    }
   }
 
   alert(`Uploaded ${lines.length} item${lines.length > 1 ? "s" : ""}.`);
@@ -462,6 +512,8 @@ window.toggleExtract = function () {
   box.style.display = box.style.display === "block" ? "none" : "block";
 };
 
+
+
 window.extractRange = function (mode) {
   const startRef = document.getElementById("extractStart").value.trim().toUpperCase();
   const endRef = document.getElementById("extractEnd").value.trim().toUpperCase();
@@ -479,14 +531,31 @@ window.extractRange = function (mode) {
   const startCol = Math.min(start.col, end.col);
   const endCol = Math.max(start.col, end.col);
 
-  const extracted = [];
+  const extractedRows = []; // rich snapshot: audio clips kept intact
+  const textLines = [];     // plain text, goes to the system clipboard
 
   for (let r = startRow; r <= endRow; r++) {
-    const rowData = [];
+    const rowSnapshot = [];
+    const rowText = [];
+
     for (let c = startCol; c <= endCol; c++) {
       const cell = getCellByCoords(r, c);
-      if (!cell) continue;
-      rowData.push(cell.innerText || "");
+      if (!cell) { rowSnapshot.push(null); continue; }
+
+      if (cell.dataset.audio) {
+        // Audio cell: keep the actual clip + filename, and use a
+        // readable label (not the icon markup) for the text clipboard.
+        const label = sanitizeFilename(cell.dataset.filename || "", "audio")
+          .replace(/\.[^.]+$/, "")
+          .replace(/_/g, " ");
+        rowSnapshot.push({ audioURL: cell.dataset.audio, filename: cell.dataset.filename, label });
+        rowText.push(label);
+      } else {
+        const text = cell.innerText || "";
+        rowSnapshot.push({ text });
+        rowText.push(text);
+      }
+
       if (mode === "remove") {
         cell.innerHTML = "";
         cell.classList.remove("audio-ready");
@@ -494,23 +563,28 @@ window.extractRange = function (mode) {
         delete cell.dataset.filename;
       }
     }
-    extracted.push(rowData.join("\t"));
+
+    extractedRows.push(rowSnapshot);
+    textLines.push(rowText.join("\t"));
   }
 
+  // Held in memory so "Upload Column" can rebuild real audio cells
+  // instead of pasting icon text — leave that box empty and click
+  // Upload to paste this extraction back in.
+  window.lastExtractedData = extractedRows;
+
   if (mode === "copy") {
-    const text = extracted.join("\n");
-    navigator.clipboard.writeText(text).then(() => {
-      alert("✅ Range copied!");
+    navigator.clipboard.writeText(textLines.join("\n")).then(() => {
+      alert("✅ Range copied! (Audio clips are held in memory too — leave the Upload Column box empty and click Upload to paste them back as playable cells.)");
     }).catch(() => {
       alert("Clipboard blocked by browser.");
     });
   }
 
   if (mode === "remove") {
-    alert("✅ Range cleared!");
+    alert("✅ Range cleared! (Audio clips are held in memory — leave the Upload Column box empty and click Upload to paste them back as playable cells.)");
   }
 };
-
 
 // -----------------------------------------------------
 // TOGGLES
