@@ -468,75 +468,7 @@ color: #e0e0e0;
 <button onclick="stopReading()">Stop</button>
 <button id="openFinder">Frequency Finder</button>
 <button id="openTabler" class="nav-btn">⊞ Tabler</button>
-   <!-- ===================================================== -->
-<!-- CONVERT TO AUDIO BUTTON + EXPANDING PANEL             -->
-<!-- BEGIN CONVERSION HTML BLOCK                           -->
-<!-- ===================================================== -->
-
-<button onclick="toggleConversion()">
-🎵 Convert To Audio
-</button>
-
-<div id="conversionBox" style="
-display:none;
-background:#111;
-color:white;
-padding:14px;
-border-bottom:1px solid #444;
-">
-
-<h3>🎵 Convert Cells To Audio Files</h3>
-
-<label>Start Cell</label>
-<input id="audioStartCell" type="text" placeholder="A1">
-
-<label>End Cell</label>
-<input id="audioEndCell" type="text" placeholder="A100">
-
-<label>Audio Output Column</label>
-<input id="audioOutputColumn" type="text" placeholder="D">
-
-<br><br>
-
-<button onclick="startAudioConversion()">
-▶ Convert Range
-</button>
-
-<div style="
-margin-top:15px;
-height:20px;
-background:#333;
-border-radius:10px;
-overflow:hidden;
-display:none;
-"
-id="audioProgressContainer">
-
-<div id="audioProgressBar" style="
-width:0%;
-height:100%;
-background:#28a745;
-transition:0.3s;
-">
-</div>
-
-</div>
-
-<div
-id="audioProgressText"
-style="
-margin-top:8px;
-font-size:12px;
-display:none;
-">
-Waiting...
-</div>
-
-</div>
-
-<!-- ===================================================== -->
-<!-- END CONVERSION HTML BLOCK                             -->
-<!-- ===================================================== --> 
+  <button onclick="window.location.href='audio-converter.html'">🎵 Audio Converter</button> 
 
   
   <!-- AI ACTIVATE BUTTON -->
