@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Audio Converter — Speech Table System</title>
+<style>
+*{box-sizing:border-box;}
+body{margin:0;font-family:sans-serif;background:#f1f3f4;color:#202124;}
+header{background:#fff;border-bottom:1px solid #dadce0;display:flex;align-items:center;gap:10px;padding:10px 14px;flex-wrap:wrap;position:sticky;top:0;z-index:1000;}
+header a{font-size:13px;color:#1a73e8;text-decoration:none;margin-right:10px;}
+button{border:none;background:#1a73e8;color:white;padding:8px 14px;border-radius:4px;font-size:13px;font-weight:500;cursor:pointer;}
+button:hover{background:#1765cc;}
+button:disabled{background:#9aa0a6;cursor:not-allowed;}
+label{font-size:13px;color:#5f6368;display:flex;align-items:center;gap:6px;}
+input,select,textarea{border:1px solid #dadce0;border-radius:4px;padding:6px 8px;font-size:13px;outline:none;}
+input:focus,select:focus,textarea:focus{border-color:#1a73e8;}
+#toolbar{display:none;background:#fff;border-bottom:1px solid #dadce0;padding:10px 14px;gap:16px;flex-wrap:wrap;align-items:center;}
+#uploadBox{display:none;background:#fff;border-bottom:1px solid #dadce0;padding:14px;}
+#uploadBox textarea{width:320px;height:90px;resize:vertical;display:block;margin-bottom:10px;}
+
+/* Conversion panel */
+#conversionBox{display:none;background:#111;color:#fff;padding:16px;border-bottom:1px solid #444;}
+#conversionBox h3{margin-top:0;}
+#conversionBox .row{display:flex;gap:20px;flex-wrap:wrap;align-items:flex-end;margin-bottom:12px;}
+#conversionBox .field{display:flex;flex-direction:column;gap:4px;}
+#conversionBox .field label{color:#ccc;}
+#conversionBox input,#conversionBox select{width:140px;}
+#conversionBox .checkfield{flex-direction:row;align-items:center;gap:6px;}
+#audioProgressContainer{margin-top:15px;height:20px;background:#333;border-radius:10px;overflow:hidden;display:none;max-width:500px;}
+#audioProgressBar{width:0%;height:100%;background:#28a745;transition:0.3s;}
+#audioProgressText{margin-top:8px;font-size:12px;display:none;}
+#conversionNote{font-size:12px;color:#aaa;max-width:600px;margin-top:10px;}
+
+#sheetWrap{overflow:auto;height:calc(100vh - 56px);background:#fff;}
+table{border-collapse:collapse;table-layout:fixed;background:white;}
+th{border:1px solid #e0e0e0;background:#f8f9fa;color:#5f6368;font-weight:500;text-align:center;height:32px;min-width:110px;width:110px;font-size:12px;position:sticky;top:0;z-index:20;}
+.row-head{min-width:50px;width:50px;left:0;z-index:30;position:sticky;background:#f8f9fa;}
+td{border:1px solid #e0e0e0;width:110px;height:32px;padding:4px 8px;font-size:13px;text-align:left;vertical-align:middle;background:white;}
+td:hover{background:#f8fbff;}
+td:focus{outline:none;border:2px solid #1a73e8;z-index:5;}
+.col-select{width:90%;border:none;background:transparent;font-size:11px;color:#5f6368;}
+td.reading{background-color:#34ce57 !important;color:#141414 !important;}
+td.audio-ready{cursor:pointer;}
+.audio-icon{cursor:pointer;margin-right:6px;}
+</style>
+</head>
+<body>
+
+<header>
+<a href="index.html">&larr; Back to main sheet</a>
+<button onclick="saveTable()">Save Table Data</button>
+<button onclick="uploadTable()">Upload Table</button>
+<input type="file" id="tableFileInput" accept=".json" style="display:none">
+<button onclick="toggleUpload()">Upload Column (vocab list)</button>
+<button onclick="toggleReader()">Reader Options</button>
+<button onclick="startReading()">Preview: Start Reading</button>
+<button onclick="stopReading()">Stop</button>
+<button onclick="toggleConversion()" style="background:#8e24aa;">🎵 Conversion</button>
+</header>
+
+<div id="uploadBox">
+<label>Paste one word/phrase per line (or comma separated if "across"):</label>
+<textarea id="columnData" placeholder="apple
+banana
+cherry"></textarea>
+<label>Start Cell <input id="startCellUpload" type="text" placeholder="A1"></label>
+<label>Direction
+  <select id="uploadDirection">
+    <option value="down">Down (rows)</option>
+    <option value="across">Across (columns)</option>
+  </select>
+</label>
+<button onclick="uploadColumn()">Upload</button>
+</div>
+
+<div id="toolbar">
+<label>Start Cell <input id="startCell" type="text" placeholder="A1"></label>
+<label>End Cell <input id="endCell" type="text" placeholder="A26"></label>
+<label>Reverse Order <input id="reverse" type="checkbox"></label>
+</div>
+
+<div id="conversionBox">
+<h3>🎵 Convert Cells To Individual Audio Files</h3>
+
+<div class="row">
+  <div class="field">
+    <label>Start Cell</label>
+    <input id="audioStartCell" type="text" placeholder="A1">
+  </div>
+  <div class="field">
+    <label>End Cell</label>
+    <input id="audioEndCell" type="text" placeholder="A100">
+  </div>
+  <div class="field">
+    <label>Output Column (B, C, D...)</label>
+    <input id="audioOutputColumn" type="text" placeholder="B">
+  </div>
+  <div class="field">
+    <label>Voice</label>
+    <select id="audioVoice"></select>
+  </div>
+  <div class="field">
+    <label>Rate</label>
+    <input id="audioRate" type="range" min="0.5" max="2" step="0.1" value="0.85">
+  </div>
+  <div class="field checkfield">
+    <input id="audioAutoDownload" type="checkbox" checked>
+    <label for="audioAutoDownload" style="margin:0;">Auto-download each file</label>
+  </div>
+  <button onclick="startAudioConversion()">▶ Convert Range</button>
+</div>
+
+<div id="audioProgressContainer"><div id="audioProgressBar"></div></div>
+<div id="audioProgressText">Waiting...</div>
+
+<div id="conversionNote">
+Note: browsers can't hand a script the raw audio bytes that speechSynthesis produces, so this
+records the sound the browser actually plays. When you click "Convert Range" your browser will
+ask you to share <b>this tab</b> — tick "Share tab audio" in that dialog, or nothing will be
+captured. Files download as <b>.webm</b> (plays in any browser, VLC, and most phones) since
+browsers can't natively encode true .mp3 client-side — say the word if you'd like a true-.mp3
+version added, it just needs an extra encoding step. Each cell in the output column also gets a
+🎵 (play) and ⬇ (re-download) icon after conversion.
+</div>
+</div>
+
+<div id="sheetWrap">
+  <table id="sheet"></table>
+</div>
+
+<script src="audio-converter.js"></script>
+</body>
+</html>
