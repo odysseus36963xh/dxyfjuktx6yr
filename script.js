@@ -1384,7 +1384,7 @@ function toggleReader() {
 // Upload
 // ===============================
 
-window.uploadColumn = function () {
+window.uploadColumn = async function () {
   console.log("🚀 UPLOAD CLICKED!");
 
   const rawText = document.getElementById("columnData").value.trim();
@@ -1396,8 +1396,8 @@ window.uploadColumn = function () {
   const startCellInput = document.getElementById("startCellUpload").value.trim().toUpperCase();
   const direction = document.getElementById("uploadDirection").value;
 
-  let startCol = 0;   // Default = Column A
-  let startRow = 0;   // Default = Row 1
+  let startCol = 0;
+  let startRow = 0;
 
   if (startCellInput) {
     const match = startCellInput.match(/^([A-Z]+)(\d+)$/);
@@ -1409,9 +1409,68 @@ window.uploadColumn = function () {
     startRow = parseInt(match[2]) - 1;
   }
 
+  if (direction === "media") {
+    let payload;
+    try {
+      payload = JSON.parse(rawText);
+    } catch (e) {
+      alert("This doesn't look like extracted media data. Use the Extract tool first, or switch Direction to Down/Across for plain text.");
+      return;
+    }
+
+    if (!payload || !payload.sheetExtract || !Array.isArray(payload.cells)) {
+      alert("This doesn't look like extracted media data. Use the Extract tool first, or switch Direction to Down/Across for plain text.");
+      return;
+    }
+
+    const gridRows = payload.cells.length;
+    const gridCols = payload.cells[0] ? payload.cells[0].length : 0;
+
+    const neededRows = startRow + gridRows;
+    const currentRows = sheetTable.rows.length - 2;
+    if (neededRows > currentRows) {
+      addNewRows(neededRows - currentRows);
+    }
+
+    const emojiMap = { image: "🖼️", audio: "🎵", video: "🎥" };
+    let filledCells = 0, injectedMedia = 0;
+
+    for (let r = 0; r < gridRows; r++) {
+      const row = sheetTable.rows[startRow + r + 2];
+      if (!row) continue;
+
+      for (let c = 0; c < gridCols; c++) {
+        const cellData = payload.cells[r][c];
+        const cell = row.cells[startCol + c + 1];
+        if (!cell || !cellData) continue;
+
+        cell.innerText = cellData.text || "";
+
+        if (cellData.media && cellData.media.length) {
+          const urls  = cellData.media.map(m => m.data);
+          const types = cellData.media.map(m => m.type);
+
+          cell.dataset.mediaUrls  = JSON.stringify(urls);
+          cell.dataset.mediaTypes = JSON.stringify(types);
+
+          const typePrefix = (types[0] || "").split("/")[0];
+          const emoji = emojiMap[typePrefix];
+          if (emoji && !cell.innerHTML.includes(emoji)) {
+            cell.appendChild(document.createTextNode(` ${emoji}`));
+          }
+          injectedMedia += urls.length;
+        }
+
+        filledCells++;
+      }
+    }
+
+    alert(`✅ Re-injected ${filledCells} cell(s), including ${injectedMedia} media file(s)!`);
+    return;
+  }
+
   const lines = rawText.split(/\r?\n/).map(x => x.trim()).filter(x => x !== "");
 
-  // Auto-expand table if needed
   const neededRows = direction === "down" 
     ? startRow + lines.length 
     : startRow + 1;
@@ -1421,7 +1480,6 @@ window.uploadColumn = function () {
     addNewRows(neededRows - currentRows);
   }
 
-  // Fill the cells
   for (let i = 0; i < lines.length; i++) {
     let rowIndex = startRow;
     let colIndex = startCol;
@@ -1441,9 +1499,6 @@ window.uploadColumn = function () {
   }
 
   alert(`✅ Successfully uploaded ${lines.length} item${lines.length === 1 ? '' : 's'}!`);
-
-  // Optional: clear the input after successful upload
-  // document.getElementById("columnData").value = "";
 };
 
 
@@ -2168,22 +2223,25 @@ async function startAudioConversion(){
 
 
 
-
-function toggleExtract() {
-  const box = document.getElementById("extractBox");
-  if (!box) return;
-
-  // Close upload if open (keeps UI clean)
-  const uploadBox = document.getElementById("uploadBox");
-  if (uploadBox) uploadBox.style.display = "none";
-
-  box.style.display = box.style.display === "block" ? "none" : "block";
+async function blobUrlToDataUrl(url) {
+  if (!url) return null;
+  if (url.startsWith("data:")) return url;
+  try {
+    const res = await fetch(url);
+    const blob = await res.blob();
+    return await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  } catch (e) {
+    console.error("Could not convert media to data URL:", e);
+    return null;
+  }
 }
 
-// ===============================
-// EXTRACT RANGE
-// ===============================
-function extractRange(mode) {
+async function extractRange(mode) {
   const table = document.getElementById("sheet");
   if (!table) {
     alert("Table not found.");
@@ -2201,36 +2259,93 @@ function extractRange(mode) {
     return;
   }
 
-  // Normalize selection (handles reversed input)
   const startRow = Math.min(start.row, end.row);
   const endRow   = Math.max(start.row, end.row);
   const startCol = Math.min(start.col, end.col);
   const endCol   = Math.max(start.col, end.col);
 
   let extracted = [];
+  let grid = [];
+  let mediaCount = 0;
 
   for (let r = startRow; r <= endRow; r++) {
-    const tableRow = table.rows[r + 1]; // +1 offset (header row)
+    const tableRow = table.rows[r + 1];
     if (!tableRow) continue;
 
     let rowData = [];
+    let gridRow = [];
 
     for (let c = startCol; c <= endCol; c++) {
-      const cell = tableRow.cells[c + 1]; // +1 skip row number column
+      const cell = tableRow.cells[c + 1];
       if (!cell) continue;
 
-      rowData.push(cell.innerText || "");
+      const text = cell.innerText || "";
+      rowData.push(text);
+
+      let mediaList = [];
+      if (cell.dataset.mediaUrls) {
+        try {
+          const urls  = JSON.parse(cell.dataset.mediaUrls);
+          const types = JSON.parse(cell.dataset.mediaTypes || "[]");
+
+          for (let i = 0; i < urls.length; i++) {
+            const dataUrl = await blobUrlToDataUrl(urls[i]);
+            if (dataUrl) {
+              mediaList.push({ type: types[i] || "", data: dataUrl });
+              mediaCount++;
+            }
+          }
+        } catch (e) {
+          console.error("Could not read media for cell:", e);
+        }
+      }
+
+      gridRow.push({ text, media: mediaList });
 
       if (mode === "remove") {
         cell.innerText = "";
+        delete cell.dataset.mediaUrls;
+        delete cell.dataset.mediaTypes;
       }
     }
 
     extracted.push(rowData.join("\t"));
+    grid.push(gridRow);
   }
 
   if (mode === "copy") {
-    const text = extracted.join("\n");
+    if (mediaCount > 0) {
+      const payload = JSON.stringify({
+        sheetExtract: true,
+        rows: grid.length,
+        cols: grid[0] ? grid[0].length : 0,
+        cells: grid
+      });
+
+      const columnData      = document.getElementById("columnData");
+      const uploadDirection = document.getElementById("uploadDirection");
+      const uploadBox       = document.getElementById("uploadBox");
+
+      if (columnData) columnData.value = payload;
+      if (uploadDirection) uploadDirection.value = "media";
+      if (uploadBox) uploadBox.style.display = "block";
+
+      const totalCells = grid.length * (grid[0] ? grid[0].length : 0);
+      alert(`✅ Extracted ${totalCells} cell(s), including ${mediaCount} media file(s). Loaded into the Upload box — set a Start Cell and click Upload to re-inject with media intact.`);
+    } else {
+      const text = extracted.join("\n");
+      navigator.clipboard.writeText(text).then(() => {
+        alert("✅ Range copied!");
+      }).catch(() => {
+        alert("Clipboard blocked by browser.");
+      });
+    }
+  }
+
+  if (mode === "remove") {
+    alert(`✅ Range cleared!${mediaCount ? ` (${mediaCount} media file(s) removed)` : ""}`);
+  }
+}
 
     navigator.clipboard.writeText(text).then(() => {
       alert("✅ Range copied!");
